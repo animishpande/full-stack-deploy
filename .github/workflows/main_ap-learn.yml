@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy ASP.Net Core app to Azure Web App - AP-learn
+name: Build and deploy Full Stack App to Azure Web App
 
 on:
   push:
@@ -18,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Backend Build
       - name: Set up .NET Core
         uses: actions/setup-dotnet@v4
         with:
@@ -25,15 +26,50 @@ jobs:
 
       - name: Build with dotnet
         run: dotnet build --configuration Release
+        working-directory: ./API
 
       - name: dotnet publish
-        run: dotnet publish -c Release -o "${{env.DOTNET_ROOT}}/myapp"
+        run: dotnet publish -c Release -o ${{github.workspace}}/publish
+        working-directory: ./API
+
+      # Frontend Build
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Install frontend dependencies
+        run: pnpm install
+        working-directory: ./web-ui
+
+      - name: Build Next.js app
+        run: pnpm build
+        working-directory: ./web-ui
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
+      # Copy frontend build to backend wwwroot
+      - name: Create wwwroot directory
+        run: New-Item -ItemType Directory -Force -Path ${{github.workspace}}/publish/wwwroot
+
+      - name: Copy Next.js build to wwwroot
+        run: |
+          Copy-Item -Path ./web-ui/.next -Destination ${{github.workspace}}/publish/wwwroot/.next -Recurse -Force
+          Copy-Item -Path ./web-ui/public/* -Destination ${{github.workspace}}/publish/wwwroot/public -Recurse -Force
+          Copy-Item -Path ./web-ui/package.json -Destination ${{github.workspace}}/publish/wwwroot/package.json -Force
+          Copy-Item -Path ./web-ui/pnpm-lock.yaml -Destination ${{github.workspace}}/publish/wwwroot/pnpm-lock.yaml -Force
+          Copy-Item -Path ./web-ui/next.config.ts -Destination ${{github.workspace}}/publish/wwwroot/next.config.ts -Force
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
-          name: .net-app
-          path: ${{env.DOTNET_ROOT}}/myapp
+          name: fullstack-app
+          path: ${{github.workspace}}/publish
 
   deploy:
     runs-on: windows-latest
@@ -46,7 +82,7 @@ jobs:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: .net-app
+          name: fullstack-app
       
       - name: Login to Azure
         uses: azure/login@v2
